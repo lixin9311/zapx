@@ -18,6 +18,13 @@ func Label(key, val string) zapcore.Field {
 	return zap.String(logKeyLabelPrefix+key, val)
 }
 
+func Slack(url ...string) zapcore.Field {
+	if len(url) > 0 {
+		return zap.String(logKeySlackNotification, url[0])
+	}
+	return zap.Bool(logKeySlackNotification, true)
+}
+
 // Context constructs a field that carries trace span & grpc method if possible.
 func Context(ctx context.Context) zapcore.Field {
 	span := trace.FromContext(ctx)
