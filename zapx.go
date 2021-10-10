@@ -8,10 +8,14 @@ import (
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
 	RequestIDMetadataKey = "x-request-id"
+
+	protomarshaler = protojson.MarshalOptions{UseProtoNames: true}
 )
 
 func Label(key, val string) zapcore.Field {
@@ -23,6 +27,18 @@ func Slack(url ...string) zapcore.Field {
 		return zap.String(logKeySlackNotification, url[0])
 	}
 	return zap.Bool(logKeySlackNotification, true)
+}
+
+type jsonpbObjectMarshaler struct {
+	pb proto.Message
+}
+
+func (j *jsonpbObjectMarshaler) MarshalJSON() ([]byte, error) {
+	return protomarshaler.Marshal(j.pb)
+}
+
+func Proto(key string, val proto.Message) zapcore.Field {
+	return zap.Reflect(key, jsonpbObjectMarshaler{pb: val})
 }
 
 // Context constructs a field that carries trace span & grpc method if possible.
