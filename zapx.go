@@ -38,7 +38,7 @@ func (j *jsonpbObjectMarshaler) MarshalJSON() ([]byte, error) {
 }
 
 func Proto(key string, val proto.Message) zapcore.Field {
-	return zap.Reflect(key, jsonpbObjectMarshaler{pb: val})
+	return zap.Reflect(key, &jsonpbObjectMarshaler{pb: val})
 }
 
 // Context constructs a field that carries trace span & grpc method if possible.
