@@ -15,6 +15,14 @@ const (
 	logKeyLabelPrefix       = "zapx.label#"
 )
 
+type slackBehavior int
+
+const (
+	defaultSlack slackBehavior = iota
+	enableSlack
+	disableSlack
+)
+
 // Zap returns a zap logger configured to output logs to stdout and stderr.
 func Zap(level zapcore.Level, opts ...Option) *zap.Logger {
 	opt := &option{
@@ -113,6 +121,9 @@ type stackdriver struct {
 	slackURL    string
 	errorPraser func(error) (zapcore.ObjectMarshaler, bool)
 	slackWG     sync.WaitGroup
+
+	enableSlack bool
+	fields      []zapcore.Field
 }
 
 func (s *stackdriver) Enabled(l zapcore.Level) bool {
@@ -120,14 +131,34 @@ func (s *stackdriver) Enabled(l zapcore.Level) bool {
 }
 
 func (s *stackdriver) With(fields []zapcore.Field) zapcore.Core {
-	return &stackdriver{
-		parent:      s.parent.With(fields),
+	fs, sendSlack, slackURL := s.parseFields(fields)
+	newFileds := make([]zapcore.Field, len(fs)+len(s.fields))
+
+	copy(newFileds, s.fields)
+	copy(newFileds[len(s.fields):], fs)
+
+	news := &stackdriver{
+		parent:      s.parent,
 		projectID:   s.projectID,
 		svcCtx:      s.svcCtx,
 		slackURL:    s.slackURL,
 		errorPraser: s.errorPraser,
+
+		fields: newFileds,
 	}
+
+	if slackURL != "" {
+		news.slackURL = slackURL
+	}
+	if sendSlack == disableSlack {
+		news.enableSlack = false
+	} else if sendSlack == enableSlack {
+		news.enableSlack = true
+	}
+
+	return news
 }
+
 func (s *stackdriver) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
 	if s.Enabled(ent.Level) {
 		return ce.AddCore(ent, s)
@@ -143,9 +174,10 @@ func (s *stackdriver) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	fs := append(fields, zap.Object("logging.googleapis.com/sourceLocation", loc))
 
 	fs, sendSlack, slackURL := s.parseFields(fs)
+	fs = append(fs, s.fields...)
 
 	fs = append(fs, zap.Object("serviceContext", s.svcCtx))
-	if sendSlack {
+	if sendSlack == enableSlack || (sendSlack == defaultSlack && s.enableSlack) {
 		s.slackWG.Add(1)
 		go s.sendSlackNotification(slackURL, ent, fs)
 	}
@@ -157,7 +189,7 @@ func (s *stackdriver) Sync() error {
 	return s.parent.Sync()
 }
 
-func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, sendSlack bool, slackURL string) {
+func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, sendSlack slackBehavior, slackURL string) {
 	labels := labels([]zap.Field{})
 	for _, f := range fields {
 		if strings.HasPrefix(f.Key, logKeyLabelPrefix) {
@@ -185,11 +217,15 @@ func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, s
 			}
 
 		case logKeySlackNotification:
-			if f.Type == zapcore.BoolType && f.Integer == 1 {
-				sendSlack = true
-				slackURL = s.slackURL
+			if f.Type == zapcore.BoolType {
+				if f.Integer == 1 {
+					sendSlack = enableSlack
+					slackURL = s.slackURL
+				} else {
+					sendSlack = disableSlack
+				}
 			} else if f.Type == zapcore.StringType {
-				sendSlack = true
+				sendSlack = enableSlack
 				slackURL = f.String
 			}
 		default:
