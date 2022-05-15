@@ -61,7 +61,7 @@ var StackdriverEncoderConfig = zapcore.EncoderConfig{
 	TimeKey:       "eventTime",
 	NameKey:       "logger",
 	CallerKey:     "caller",
-	StacktraceKey: "stack_trace",
+	StacktraceKey: "stacktrace",
 	LineEnding:    zapcore.DefaultLineEnding,
 	EncodeLevel: func(lv zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
 		var s string
