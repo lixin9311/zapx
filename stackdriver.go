@@ -179,7 +179,7 @@ func (s *stackdriver) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	sloc := sourceLocationFromEntry(ent)
 	fs := fields
 
-	fs, user, sendSlack, slackURL := s.parseFields(fs)
+	fs, user, sendSlack, slackURL := s.parseFields(fs, ent.Message)
 	fs = append(fs, s.fields...)
 	if user == "" {
 		user = s.user
