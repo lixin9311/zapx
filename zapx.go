@@ -80,6 +80,37 @@ func (md wmetadata) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return nil
 }
 
+type errorReportingContext struct {
+	reportLocation reportLocation
+	user           string
+}
+
+func (r errorReportingContext) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r.user != "" {
+		e.AddString("user", r.user)
+	}
+	e.AddObject("reportLocation", r.reportLocation)
+	return nil
+}
+
+// sourceLocation is the location in the source code where the decision was
+// made to report the error, usually the place where it was logged. For a
+// logged exception this would be the source line where the exception is
+// logged, usually close to the place where it was caught.
+type sourceLocation struct {
+	file     string
+	line     int
+	function string
+}
+
+// MarshalLogObject is ObjectMarshaler implementation.
+func (r sourceLocation) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("file", r.file)
+	e.AddInt("line", r.line)
+	e.AddString("function", r.function)
+	return nil
+}
+
 // reportLocation is the location in the source code where the decision was
 // made to report the error, usually the place where it was logged. For a
 // logged exception this would be the source line where the exception is

@@ -123,6 +123,7 @@ type stackdriver struct {
 	slackWG     sync.WaitGroup
 
 	enableSlack bool
+	user        string
 	fields      []zapcore.Field
 }
 
@@ -131,9 +132,12 @@ func (s *stackdriver) Enabled(l zapcore.Level) bool {
 }
 
 func (s *stackdriver) With(fields []zapcore.Field) zapcore.Core {
-	fs, sendSlack, slackURL := s.parseFields(fields)
+	fs, user, sendSlack, slackURL := s.parseFields(fields)
 	newFileds := make([]zapcore.Field, len(fs)+len(s.fields))
 
+	if user == "" {
+		user = s.user
+	}
 	copy(newFileds, s.fields)
 	copy(newFileds[len(s.fields):], fs)
 
@@ -144,6 +148,7 @@ func (s *stackdriver) With(fields []zapcore.Field) zapcore.Core {
 		slackURL:    s.slackURL,
 		errorPraser: s.errorPraser,
 
+		user:   user,
 		fields: newFileds,
 	}
 
@@ -170,13 +175,16 @@ func (s *stackdriver) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	if ent.LoggerName != "" && ent.LoggerName != "unknown" {
 		ent.Message = ent.LoggerName + ": " + ent.Message
 	}
-	loc := reportLocationFromEntry(ent)
-	fs := append(fields, zap.Object("logging.googleapis.com/sourceLocation", loc))
+	rloc := reportLocationFromEntry(ent)
+	sloc := sourceLocationFromEntry(ent)
+	fs := fields
 
-	fs, sendSlack, slackURL := s.parseFields(fs)
+	fs, user, sendSlack, slackURL := s.parseFields(fs)
 	fs = append(fs, s.fields...)
-
-	fs = append(fs, zap.Object("serviceContext", s.svcCtx))
+	if user == "" {
+		user = s.user
+	}
+	fs = append(fs, zap.Object("logging.googleapis.com/sourceLocation", sloc), zap.Object("serviceContext", s.svcCtx), zap.Object("context", errorReportingContext{reportLocation: rloc, user: user}))
 	if sendSlack == enableSlack || (sendSlack == defaultSlack && s.enableSlack) {
 		s.slackWG.Add(1)
 		go s.sendSlackNotification(slackURL, ent, fs)
@@ -189,9 +197,14 @@ func (s *stackdriver) Sync() error {
 	return s.parent.Sync()
 }
 
-func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, sendSlack slackBehavior, slackURL string) {
+func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, user string, sendSlack slackBehavior, slackURL string) {
 	labels := labels([]zap.Field{})
 	for _, f := range fields {
+		if f.Key == "user" {
+			if f.Type == zapcore.StringType {
+				user = f.String
+			}
+		}
 		if strings.HasPrefix(f.Key, logKeyLabelPrefix) {
 			key := strings.TrimPrefix(f.Key, logKeyLabelPrefix)
 			val := f.String
@@ -244,5 +257,5 @@ func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, s
 	if len(labels) != 0 {
 		fs = append(fs, zap.Object("logging.googleapis.com/labels", labels))
 	}
-	return fs, sendSlack, slackURL
+	return fs, user, sendSlack, slackURL
 }
