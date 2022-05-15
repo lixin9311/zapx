@@ -197,7 +197,7 @@ func (s *stackdriver) Sync() error {
 	return s.parent.Sync()
 }
 
-func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, user string, sendSlack slackBehavior, slackURL string) {
+func (s *stackdriver) parseFields(fields []zapcore.Field, msg ...string) (fs []zapcore.Field, user string, sendSlack slackBehavior, slackURL string) {
 	labels := labels([]zap.Field{})
 	for _, f := range fields {
 		if f.Key == "user" {
@@ -212,6 +212,16 @@ func (s *stackdriver) parseFields(fields []zapcore.Field) (fs []zapcore.Field, u
 			continue
 		}
 		switch f.Key {
+
+		case "user":
+			if f.Type == zapcore.StringType {
+				user = f.String
+			}
+		case "stack_trace":
+			if f.Type == zapcore.StringType && len(msg) > 0 {
+				f.String = msg[0] + "\n" + f.String
+			}
+			fs = append(fs, f)
 		case logKeyContextInfo:
 			if info, ok := f.Interface.(contextInfo); ok {
 				if info.IsSampled {
