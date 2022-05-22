@@ -2,6 +2,7 @@ package zapx
 
 import (
 	"context"
+	"strings"
 
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
@@ -43,16 +44,40 @@ func Proto(key string, val proto.Message) zapcore.Field {
 
 // Context constructs a field that carries trace span & grpc method if possible.
 func Context(ctx context.Context) zapcore.Field {
-	span := trace.FromContext(ctx)
-	sctx := span.SpanContext()
+	var info contextInfo
 	method, _ := grpc.Method(ctx)
-	info := contextInfo{
-		IsSampled:  sctx.IsSampled(),
-		TraceID:    sctx.TraceID.String(),
-		SpanID:     sctx.SpanID.String(),
-		GrpcMethod: method,
-		RequestID:  extractRequestID(ctx),
+	info.GrpcMethod = method
+	info.RequestID = extractRequestID(ctx)
+
+	if span := trace.FromContext(ctx); span != nil || !span.SpanContext().IsSampled() {
+		sctx := span.SpanContext()
+		info.IsSampled = sctx.IsSampled()
+		info.TraceID = sctx.TraceID.String()
+		info.SpanID = sctx.SpanID.String()
+	} else {
+		// try x-cloud-trace-context header
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if cloudTraceHeader := md.Get("x-cloud-trace-context"); len(cloudTraceHeader) > 0 {
+				h := cloudTraceHeader[0]
+				slash := strings.Index(h, `/`)
+				if slash != -1 {
+					tid, h := h[:slash], h[slash+1:]
+					info.TraceID = tid
+					// Parse the span id field.
+					spanstr := h
+					semicolon := strings.Index(h, `;`)
+					if semicolon != -1 {
+						spanstr, h = h[:semicolon], h[semicolon+1:]
+					}
+					info.SpanID = spanstr
+					if strings.HasPrefix(h, "o=1") {
+						info.IsSampled = true
+					}
+				}
+			}
+		}
 	}
+
 	return zap.Reflect(logKeyContextInfo, info)
 }
 

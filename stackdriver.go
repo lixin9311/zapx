@@ -200,11 +200,6 @@ func (s *stackdriver) Sync() error {
 func (s *stackdriver) parseFields(fields []zapcore.Field, msg ...string) (fs []zapcore.Field, user string, sendSlack slackBehavior, slackURL string) {
 	labels := labels([]zap.Field{})
 	for _, f := range fields {
-		if f.Key == "user" {
-			if f.Type == zapcore.StringType {
-				user = f.String
-			}
-		}
 		if strings.HasPrefix(f.Key, logKeyLabelPrefix) {
 			key := strings.TrimPrefix(f.Key, logKeyLabelPrefix)
 			val := f.String
